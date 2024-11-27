@@ -101,7 +101,6 @@ def main() -> None:
         msg_id = email["Message-Id"]
         send_message(email["Date"], email["Subject"], str(email.get_payload()))
         update_last_processed_message(conf.state, msg_id)
-        break
     if dry_run:
         print("Pending messages:", count)
     elif skip_to_end:
