@@ -4,9 +4,12 @@ import asyncio
 import mailbox
 import types
 from argparse import ArgumentParser
+from io import BytesIO
 from typing import Iterator
 
 import telegram_send  # type: ignore[import-untyped]
+
+MAX_MESSAGE_SIZE = 10_000
 
 
 def get_last_processed_message(state_file: str) -> str | None:
@@ -34,6 +37,27 @@ def iterate_unread_messages(
                 seen_last_message = True
     if not seen_last_message:
         raise ValueError(f"Message with id={last_read_id!r} not found in mbox.")
+
+
+def send_message(date: str, subject: str, body: str) -> None:
+    msg_lines = [
+        "Local email message",
+        date,
+        subject,
+        "",
+        body,
+    ]
+    msg_text = "\n".join(msg_lines)
+    msg_files = None
+    if len(msg_text) > MAX_MESSAGE_SIZE:
+        msg_file = BytesIO(msg_text.encode("utf-8"))
+        msg_file.name = "message.txt"
+        msg_files = [msg_file]
+        msg_text = msg_text[:MAX_MESSAGE_SIZE] + "\n...message too long..."
+
+    res = telegram_send.send(messages=[msg_text], pre=True, files=msg_files)
+    if isinstance(res, types.CoroutineType):
+        asyncio.run(res)
 
 
 def main() -> None:
@@ -75,16 +99,7 @@ def main() -> None:
         if dry_run or skip_to_end:
             continue
         msg_id = email["Message-Id"]
-        msg_lines = [
-            "Local email message",
-            email["Date"],
-            email["Subject"],
-            "",
-            str(email.get_payload()),
-        ]
-        res = telegram_send.send(messages=["\n".join(msg_lines)], pre=True)
-        if isinstance(res, types.CoroutineType):
-            asyncio.run(res)
+        send_message(email["Date"], email["Subject"], str(email.get_payload()))
         update_last_processed_message(conf.state, msg_id)
         break
     if dry_run:
